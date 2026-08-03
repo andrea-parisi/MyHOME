@@ -1,7 +1,8 @@
 # MyHOME (Modernized Fork)
-**Version: v0.4.0**
+**Version: v0.4.1**
 
 ## 🌟 Changelog
+* **v0.4.1**: **Critical Hotfix!** Fixed a severe issue introduced in v0.4.0 where intercepting Load Management (WHO 3) messages crashed the integration's listening loop due to invalid notification ID characters. This crash caused the integration to rapidly reconnect to the BTicino gateway, effectively creating a Denial of Service (DoS) condition on the bus that prevented the hardware load management unit from successfully sending disconnect commands to appliances.
 * **v0.4.0**: **Features Galore!** 
   - **Smooth Transitions**: Native support for fade-in and fade-out transitions on dimmable lights (using software-based stepped dimming).
   - **Load Management (Gestione Carichi) Discovery**: Added exploratory support for WHO=3. The integration now intercepts load management events and creates persistent notifications in Home Assistant to aid in mapping specific actuators.

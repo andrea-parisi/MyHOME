@@ -154,31 +154,36 @@ class MyHOMEGatewayHandler:
                         LOGGER.warning("%s Listening session disconnected. Reconnecting...", self.log_id)
                         break
 
-                    LOGGER.debug("%s Message received: `%s`", self.log_id, message)
+                    try:
+                        LOGGER.debug("%s Message received: `%s`", self.log_id, message)
 
-                    if self.generate_events:
-                        if isinstance(message, OWNMessage):
-                            _event_content = {"gateway": str(self.gateway.host)}
-                            _event_content.update(message.event_content)
-                            self.hass.bus.async_fire("myhome_message_event", _event_content)
-                        else:
-                            self.hass.bus.async_fire("myhome_message_event", {"gateway": str(self.gateway.host), "message": str(message)})
+                        if self.generate_events:
+                            if isinstance(message, OWNMessage):
+                                _event_content = {"gateway": str(self.gateway.host)}
+                                _event_content.update(message.event_content)
+                                self.hass.bus.async_fire("myhome_message_event", _event_content)
+                            else:
+                                self.hass.bus.async_fire("myhome_message_event", {"gateway": str(self.gateway.host), "message": str(message)})
 
-                    if not isinstance(message, OWNMessage):
-                        if isinstance(message, str) and (message.startswith("*3*") or message.startswith("*#3*")):
-                            LOGGER.info("Intercepted Load Management (WHO 3) raw message: %s", message)
-                            self.hass.components.persistent_notification.async_create(
-                                self.hass,
-                                title="MyHOME Controllo Carichi",
-                                message=f"Nuovo messaggio di gestione carichi intercettato: `{message}`\nInvia questo log allo sviluppatore per integrarlo!",
-                                notification_id=f"myhome_load_management_{message}",
-                            )
-                        else:
-                            LOGGER.warning(
-                                "%s Data received is not a message: `%s`",
-                                self.log_id,
-                                message,
-                            )
+                        if not isinstance(message, OWNMessage):
+                            if isinstance(message, str) and (message.startswith("*3*") or message.startswith("*#3*")):
+                                LOGGER.info("Intercepted Load Management (WHO 3) raw message: %s", message)
+                                safe_msg_id = message.replace('*', '_').replace('#', '_')
+                                self.hass.components.persistent_notification.async_create(
+                                    self.hass,
+                                    title="MyHOME Controllo Carichi",
+                                    message=f"Nuovo messaggio di gestione carichi intercettato: `{message}`\nInvia questo log allo sviluppatore per integrarlo!",
+                                    notification_id=f"myhome_load_management_{safe_msg_id}",
+                                )
+                            else:
+                                LOGGER.warning(
+                                    "%s Data received is not a message: `%s`",
+                                    self.log_id,
+                                    message,
+                                )
+                            continue
+                    except Exception as ex:
+                        LOGGER.error("Error processing message %s: %s", message, ex)
                         continue
 
                     # Auto-learning logic
