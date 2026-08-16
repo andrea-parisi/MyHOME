@@ -3,17 +3,15 @@ import voluptuous as vol
 
 from homeassistant.components.homeassistant.triggers import event as event_trigger
 from homeassistant.const import CONF_DEVICE_ID, CONF_DOMAIN, CONF_PLATFORM, CONF_TYPE
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
 
 TRIGGER_TYPES = {"scenario_button_pressed"}
 
-TRIGGER_SCHEMA = vol.Schema(
+TRIGGER_SCHEMA = cv.DEVICE_TRIGGER_BASE_SCHEMA.extend(
     {
-        vol.Required(CONF_PLATFORM): "device",
-        vol.Required(CONF_DOMAIN): DOMAIN,
-        vol.Required(CONF_DEVICE_ID): str,
         vol.Required(CONF_TYPE): vol.In(TRIGGER_TYPES),
         vol.Required("scenario"): vol.All(vol.Coerce(int), vol.Range(min=1, max=31)),
     }
@@ -48,6 +46,7 @@ async def async_get_triggers(hass, device_id):
                 CONF_DEVICE_ID: device_id,
                 CONF_TYPE: "scenario_button_pressed",
                 "scenario": i,
+                "metadata": {"secondary": False},
             }
         )
 
