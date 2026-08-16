@@ -1,7 +1,6 @@
 """Provides device triggers for MyHOME."""
 import voluptuous as vol
 
-from homeassistant.components.homeassistant.triggers import event as event_trigger
 from homeassistant.const import CONF_DEVICE_ID, CONF_DOMAIN, CONF_PLATFORM, CONF_TYPE
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -69,17 +68,16 @@ async def async_attach_trigger(hass, config, action, trigger_info):
         return None
 
     # Attach to the native event myhome_scenario_event
-    event_config = event_trigger.TRIGGER_SCHEMA(
-        {
-            event_trigger.CONF_PLATFORM: "event",
-            event_trigger.CONF_EVENT_TYPE: "myhome_scenario_event",
-            event_trigger.CONF_EVENT_DATA: {
-                "scenario": config["scenario"],
-                "control_panel": control_panel,
-            },
-        }
-    )
+    event_config = {
+        "platform": "event",
+        "event_type": "myhome_scenario_event",
+        "event_data": {
+            "scenario": config["scenario"],
+            "control_panel": control_panel,
+        },
+    }
 
-    return await event_trigger.async_attach_trigger(
-        hass, event_config, action, trigger_info, platform_type="device"
+    from homeassistant.helpers import trigger as trigger_helper
+    return await trigger_helper.async_attach_trigger(
+        hass, event_config, action, trigger_info
     )
