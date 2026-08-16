@@ -1,0 +1,7 @@
+{
+  "tag_name": "v0.1.0",
+  "name": "v0.1.0 - First Stable Release",
+  "body": "## 🚀 First Stable Release\n\nThis release brings the integration out of alpha status and formally fixes the HACS version tracking issue.\n\n### What's Changed\n* **Fix**: Force HACS to track stable releases instead of commit hashes.\n* **Fix**: Resolve OptionsFlow crashes (`500 Internal Server Error`).\n* **Fix**: Resolve `Unknown error` during active scan and passive sniffing.\n* **Feature**: Added full native support for **WHO 16 / WHO 22** Audio Systems.\n* **Feature**: Added persistent background **Auto-learning (sniffing) mode**.",
+  "draft": false,
+  "prerelease": false
+}

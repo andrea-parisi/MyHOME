@@ -92,9 +92,11 @@ async def async_attach_trigger(hass, config, action, trigger_info):
             },
         }
 
-        from homeassistant.helpers import trigger as trigger_helper
-        return await trigger_helper.async_attach_trigger(
-            hass, event_config, action, trigger_info
+        from homeassistant.components.homeassistant.triggers import event as event_trigger
+        
+        event_config = event_trigger.TRIGGER_SCHEMA(event_config)
+        return await event_trigger.async_attach_trigger(
+            hass, event_config, action, trigger_info, platform_type="device"
         )
     except Exception as e:
         _LOGGER.error("MyHOME error in async_attach_trigger: %s", e)

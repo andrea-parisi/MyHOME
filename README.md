@@ -1,7 +1,8 @@
 # MyHOME (Modernized Fork)
-**Version: v0.4.6**
+**Version: v0.4.7**
 
 ## 🌟 Changelog
+* **v0.4.7**: **Trigger Fix Part 2!** Fixed a critical error where `homeassistant.helpers.trigger` was incorrectly used instead of the `event` trigger integration. This caused "Integration does not support device automation triggers" or "no attribute 'async_attach_trigger'" errors in HA Core 2024+ when attempting to render or attach scenario module triggers.
 * **v0.4.6**: **Diagnostic Tracing!** Changed all internal device trigger logs from `DEBUG` to `WARNING` to force them to appear in the Home Assistant logs. This allows us to trace exactly where the UI is dropping the scenario triggers.
 * **v0.4.5**: **Bulletproof Trigger Fix!** Removed all internal dependencies on `cv.DEVICE_TRIGGER_BASE_SCHEMA` which caused random silent initialization errors depending on the Home Assistant version. Added detailed internal logging to `device_trigger.py` to catch any edge cases in `async_get_triggers`.
 * **v0.4.4**: **Critical Fix!** Fixed a silent `ImportError` (`homeassistant.components.homeassistant.triggers`) introduced by API changes in Home Assistant 2024 which caused Scenario Module device triggers to be silently dropped on initialization. Device triggers have been modernized to use the standard core `trigger_helper`.
