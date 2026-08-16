@@ -25,12 +25,12 @@ TRIGGER_SCHEMA = vol.Schema(
 async def async_get_triggers(hass, device_id):
     """List device triggers for MyHOME devices."""
     try:
-        _LOGGER.debug("MyHOME async_get_triggers called for device: %s", device_id)
+        _LOGGER.warning("MyHOME async_get_triggers called for device: %s", device_id)
         device_registry = dr.async_get(hass)
         device = device_registry.async_get(device_id)
 
         if not device:
-            _LOGGER.debug("MyHOME device not found in registry")
+            _LOGGER.warning("MyHOME device not found in registry")
             return []
 
         # Check if this device is a scenario module
@@ -41,7 +41,7 @@ async def async_get_triggers(hass, device_id):
                 break
 
         if not is_scenario:
-            _LOGGER.debug("MyHOME device is not a scenario module")
+            _LOGGER.warning("MyHOME device is not a scenario module")
             return []
 
         triggers = []
@@ -58,7 +58,7 @@ async def async_get_triggers(hass, device_id):
                 }
             )
 
-        _LOGGER.debug("MyHOME returning triggers: %s", triggers)
+        _LOGGER.warning("MyHOME returning triggers: %s", triggers)
         return triggers
 
     except Exception as e:
