@@ -1,7 +1,8 @@
 # MyHOME (Modernized Fork)
-**Version: v0.4.4**
+**Version: v0.4.5**
 
 ## 🌟 Changelog
+* **v0.4.5**: **Bulletproof Trigger Fix!** Removed all internal dependencies on `cv.DEVICE_TRIGGER_BASE_SCHEMA` which caused random silent initialization errors depending on the Home Assistant version. Added detailed internal logging to `device_trigger.py` to catch any edge cases in `async_get_triggers`.
 * **v0.4.4**: **Critical Fix!** Fixed a silent `ImportError` (`homeassistant.components.homeassistant.triggers`) introduced by API changes in Home Assistant 2024 which caused Scenario Module device triggers to be silently dropped on initialization. Device triggers have been modernized to use the standard core `trigger_helper`.
 * **v0.4.3**: **Hotfix!** Fixed an issue introduced by strict schema validation in Home Assistant 2024 where Scenario Modules device triggers would not appear ("No triggers for this device") because they lacked the `metadata` parameter and `DEVICE_TRIGGER_BASE_SCHEMA` extension.
 * **v0.4.2**: **Bugfix!** Added interception for diagnostic extended frames (`*#1001` for lights and `*#1004` for climate) which OWNd fails to parse. The integration now catches these frames and immediately queries the gateway for the standard status to ensure Home Assistant stays perfectly in sync.
