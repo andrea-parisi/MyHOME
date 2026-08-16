@@ -18,6 +18,7 @@ TRIGGER_SCHEMA = vol.Schema(
         vol.Required(CONF_DEVICE_ID): str,
         vol.Required(CONF_TYPE): vol.In(TRIGGER_TYPES),
         vol.Required("scenario"): vol.All(vol.Coerce(int), vol.Range(min=1, max=31)),
+        vol.Required("subtype"): str,
         vol.Optional("metadata"): dict,
     }
 )
@@ -54,6 +55,7 @@ async def async_get_triggers(hass, device_id):
                     CONF_DEVICE_ID: device_id,
                     CONF_TYPE: "scenario_button_pressed",
                     "scenario": i,
+                    "subtype": str(i),
                     "metadata": {"secondary": False},
                 }
             )
