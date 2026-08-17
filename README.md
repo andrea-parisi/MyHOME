@@ -1,7 +1,8 @@
 # MyHOME (Modernized Fork)
-**Version: v0.4.8**
+**Version: v0.4.9**
 
 ## 🌟 Changelog
+* **v0.4.9**: **Diagnostic Frames Interception Fix!** Fixed a bug where diagnostic frames (`*#1001*` for lights and `*#1004*` for climate) were not properly intercepted because the `OWNd` library parses them into a generic `OWNEvent` object, skipping the raw string interception logic. The integration now correctly handles these objects and queries the gateway for the standard status.
 * **v0.4.8**: **Localization Fix!** Fixed an issue where the Home Assistant frontend would fail to render the "Button pressed" string in the dropdown menu with a `MISSING_VALUE` error. Changed the internal context variable from `scenario` to the HA-standard `subtype` to allow the UI to interpolate the string correctly.
 * **v0.4.7**: **Trigger Fix Part 2!** Fixed a critical error where `homeassistant.helpers.trigger` was incorrectly used instead of the `event` trigger integration. This caused "Integration does not support device automation triggers" or "no attribute 'async_attach_trigger'" errors in HA Core 2024+ when attempting to render or attach scenario module triggers.
 * **v0.4.6**: **Diagnostic Tracing!** Changed all internal device trigger logs from `DEBUG` to `WARNING` to force them to appear in the Home Assistant logs. This allows us to trace exactly where the UI is dropping the scenario triggers.

@@ -175,18 +175,6 @@ class MyHOMEGatewayHandler:
                                     message=f"Nuovo messaggio di gestione carichi intercettato: `{message}`\nInvia questo log allo sviluppatore per integrarlo!",
                                     notification_id=f"myhome_load_management_{safe_msg_id}",
                                 )
-                            elif isinstance(message, str) and (message.startswith("*#1001*") or message.startswith("*#1004*")):
-                                import re
-                                match = re.match(r"\*#(1001|1004)\*([0-9#]+)\*", message)
-                                if match:
-                                    who_diag = match.group(1)
-                                    where = match.group(2)
-                                    if who_diag == "1001":
-                                        LOGGER.info("Intercepted Lighting Diagnostic frame (WHO 1001) for %s. Requesting standard status...", where)
-                                        await self.send_status_request(OWNLightingCommand.status(where))
-                                    elif who_diag == "1004":
-                                        LOGGER.info("Intercepted Climate Diagnostic frame (WHO 1004) for %s. Requesting standard status...", where)
-                                        await self.send_status_request(OWNHeatingCommand.status(where))
                             else:
                                 LOGGER.warning(
                                     "%s Data received is not a message: `%s`",
@@ -475,6 +463,20 @@ class MyHOMEGatewayHandler:
                             self.log_id,
                             message.human_readable_log,
                         )
+                    elif str(getattr(message, "who", "")) in ["1001", "1004"]:
+                        import re
+                        match = re.match(r"\*#(1001|1004)\*([0-9#]+)\*", str(message))
+                        if match:
+                            who_diag = match.group(1)
+                            where = match.group(2)
+                            if who_diag == "1001":
+                                LOGGER.info("Intercepted Lighting Diagnostic frame (WHO 1001) for %s. Requesting standard status...", where)
+                                await self.send_status_request(OWNLightingCommand.status(where))
+                            elif who_diag == "1004":
+                                LOGGER.info("Intercepted Climate Diagnostic frame (WHO 1004) for %s. Requesting standard status...", where)
+                                await self.send_status_request(OWNHeatingCommand.status(where))
+                        else:
+                            LOGGER.info("%s Unsupported diagnostic message: `%s`", self.log_id, message)
                     else:
                         LOGGER.info(
                             "%s Unsupported message type: `%s`",
