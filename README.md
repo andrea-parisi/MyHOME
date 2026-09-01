@@ -1,7 +1,8 @@
 # MyHOME (Modernized Fork)
-**Version: v0.4.9**
+**Version: v0.4.10**
 
 ## 🌟 Changelog
+* **v0.4.10**: **Climate HVAC Action Fix!** Fixed a bug where `hvac_action` would constantly show as `idle` when actuator frames were received for zones that support both heating and cooling. Actuator frames (unlike valve frames) do not explicitly specify if they are heating or cooling, so the integration now correctly infers the action from the current `hvac_mode`.
 * **v0.4.9**: **Diagnostic Frames Interception Fix!** Fixed a bug where diagnostic frames (`*#1001*` for lights and `*#1004*` for climate) were not properly intercepted because the `OWNd` library parses them into a generic `OWNEvent` object, skipping the raw string interception logic. The integration now correctly handles these objects and queries the gateway for the standard status.
 * **v0.4.8**: **Localization Fix!** Fixed an issue where the Home Assistant frontend would fail to render the "Button pressed" string in the dropdown menu with a `MISSING_VALUE` error. Changed the internal context variable from `scenario` to the HA-standard `subtype` to allow the UI to interpolate the string correctly.
 * **v0.4.7**: **Trigger Fix Part 2!** Fixed a critical error where `homeassistant.helpers.trigger` was incorrectly used instead of the `event` trigger integration. This caused "Integration does not support device automation triggers" or "no attribute 'async_attach_trigger'" errors in HA Core 2024+ when attempting to render or attach scenario module triggers.

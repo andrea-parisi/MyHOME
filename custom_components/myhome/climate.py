@@ -415,6 +415,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._attr_hvac_action = HVACAction.HEATING
                     elif message.is_cooling():
                         self._attr_hvac_action = HVACAction.COOLING
+                    else:
+                        if self._attr_hvac_mode == HVACMode.HEAT:
+                            self._attr_hvac_action = HVACAction.HEATING
+                        elif self._attr_hvac_mode == HVACMode.COOL:
+                            self._attr_hvac_action = HVACAction.COOLING
+                        else:
+                            self._attr_hvac_action = HVACAction.IDLE
                 elif self._heating:
                     self._attr_hvac_action = HVACAction.HEATING
                 elif self._cooling:
