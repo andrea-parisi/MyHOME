@@ -433,13 +433,13 @@ media_player_schema = MyHomeDeviceSchema(
 gateway_schema = Schema(
     {
         Required(CONF_MAC): MacAddress(),
-        Optional(LIGHT): light_schema,
-        Optional(SWITCH): switch_schema,
-        Optional(COVER): cover_schema,
-        Optional(BINARY_SENSOR): binary_sensor_schema,
-        Optional(SENSOR): sensor_schema,
-        Optional(CLIMATE): climate_schema,
-        Optional(MEDIA_PLAYER): media_player_schema,
+        Optional(LIGHT): All(light_schema),
+        Optional(SWITCH): All(switch_schema),
+        Optional(COVER): All(cover_schema),
+        Optional(BINARY_SENSOR): All(binary_sensor_schema),
+        Optional(SENSOR): All(sensor_schema),
+        Optional(CLIMATE): All(climate_schema),
+        Optional(MEDIA_PLAYER): All(media_player_schema),
     }
 )
 
