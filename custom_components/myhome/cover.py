@@ -93,6 +93,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         manufacturer: str,
         model: str,
         gateway: MyHOMEGatewayHandler,
+        opening_time: int = 0,
+        closing_time: int = 0,
     ):
         super().__init__(
             hass=hass,
