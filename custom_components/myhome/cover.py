@@ -1,4 +1,9 @@
 """Support for MyHome covers."""
+
+# Interval between periodic position updates while a time-based cover
+# is moving. 500 ms gives ~2-3% resolution on 15-25 s shutters, at
+# negligible CPU cost.
+POSITION_UPDATE_INTERVAL = timedelta(milliseconds=500)
 from homeassistant.components.cover import (
     ATTR_POSITION,
     DOMAIN as PLATFORM,
@@ -32,8 +37,11 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
+
+from homeassistant.core import callback, CALLBACK_TYPE
+from homeassistant.helpers.event import async_track_time_interval
 
 from .myhome_device import MyHOMEEntity
 from .gateway import MyHOMEGatewayHandler
@@ -132,6 +140,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._attr_closing_time = closing_time
         self._attr_advanced = advanced
         self._attr_last_event = datetime.now()
+        self._position_update_unsub: CALLBACK_TYPE | None = None
         self._attr_is_opening = None
         self._attr_is_closing = None
         self._attr_is_closed = None
@@ -189,6 +198,82 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Stop the cover."""
         await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
 
+    def _extrapolate_position(self) -> None:
+        """Update ``_attr_current_cover_position`` using elapsed time.
+
+        Callable both from ``handle_event`` (on bus start/stop) and from
+        the periodic timer (during movement). Uses the additive formula
+        so ``_attr_last_event`` MUST be refreshed by the caller after
+        this method returns.
+        """
+        if (
+            self._attr_last_event is None
+            or self._attr_opening_time <= 0
+            or self._attr_closing_time <= 0
+        ):
+            return
+
+        elapsed_seconds = (datetime.now() - self._attr_last_event).total_seconds()
+        if elapsed_seconds <= 0:
+            return
+
+        if self._attr_is_opening:
+            if self._attr_opening_time < elapsed_seconds:
+                self._attr_current_cover_position = 100
+            elif self._attr_current_cover_position is not None:
+                self._attr_current_cover_position = round(
+                    min(100, self._attr_current_cover_position + (100 * elapsed_seconds / self._attr_opening_time)),
+                    0,
+                )
+        elif self._attr_is_closing:
+            if self._attr_closing_time < elapsed_seconds:
+                self._attr_current_cover_position = 0
+            elif self._attr_current_cover_position is not None:
+                self._attr_current_cover_position = round(
+                    max(0, self._attr_current_cover_position - (100 * elapsed_seconds / self._attr_closing_time)),
+                    0,
+                )
+
+        if self._attr_current_cover_position is not None:
+            self._attr_is_closed = self._attr_current_cover_position == 0
+
+    def _start_position_tracker(self) -> None:
+        """Start the periodic position update timer if not already running."""
+        if self._position_update_unsub is not None:
+            return
+        if self._attr_opening_time <= 0 or self._attr_closing_time <= 0:
+            return
+        LOGGER.debug(
+            "%s starting periodic position tracker (interval=%s)",
+            self._gateway_handler.log_id,
+            POSITION_UPDATE_INTERVAL,
+        )
+        self._position_update_unsub = async_track_time_interval(
+            self.hass, self._periodic_position_update, POSITION_UPDATE_INTERVAL
+        )
+
+    def _stop_position_tracker(self) -> None:
+        """Stop the periodic position update timer if running."""
+        if self._position_update_unsub is None:
+            return
+        LOGGER.debug(
+            "%s stopping periodic position tracker",
+            self._gateway_handler.log_id,
+        )
+        self._position_update_unsub()
+        self._position_update_unsub = None
+
+    @callback
+    def _periodic_position_update(self, now: datetime) -> None:
+        """Timer tick: extrapolate a new position from elapsed time."""
+        self._extrapolate_position()
+        self._attr_last_event = datetime.now()
+        self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel the position tracker on entity removal."""
+        self._stop_position_tracker()
+
     def handle_event(self, message: OWNAutomationEvent):
         """Handle an event message."""
         LOGGER.info(
@@ -197,33 +282,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             message.human_readable_log,
         )
 
-        # If the bus provides a position (advanced shutter), use it; otherwise
+        # If the bus provides a position (advanced shutter), trust it. Otherwise
         # extrapolate from the time elapsed since the last start/stop event.
         if message.current_position is not None:
             self._attr_current_cover_position = message.current_position
-        elif (
-            self._attr_last_event is not None
-            and self._attr_opening_time > 0
-            and self._attr_closing_time > 0
-        ):
-            elapsed_seconds = (datetime.now() - self._attr_last_event).total_seconds()
-            if elapsed_seconds > 0:
-                if self._attr_is_opening:
-                    if self._attr_opening_time < elapsed_seconds:
-                        self._attr_current_cover_position = 100
-                    elif self._attr_current_cover_position is not None:
-                        self._attr_current_cover_position = round(
-                            min(100, self._attr_current_cover_position + (100 * elapsed_seconds / self._attr_opening_time)),
-                            0,
-                        )
-                elif self._attr_is_closing:
-                    if self._attr_closing_time < elapsed_seconds:
-                        self._attr_current_cover_position = 0
-                    elif self._attr_current_cover_position is not None:
-                        self._attr_current_cover_position = round(
-                            max(0, self._attr_current_cover_position - (100 * elapsed_seconds / self._attr_closing_time)),
-                            0,
-                        )
+        else:
+            self._extrapolate_position()
             LOGGER.debug(
                 "%s current_cover_position=%s",
                 self._gateway_handler.log_id,
@@ -238,5 +302,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_is_closed = message.is_closed
         elif self._attr_current_cover_position is not None:
             self._attr_is_closed = self._attr_current_cover_position == 0
+
+        # Start or stop the periodic tracker based on the new movement state
+        if self._attr_is_opening or self._attr_is_closing:
+            self._start_position_tracker()
+        else:
+            self._stop_position_tracker()
 
         self.async_schedule_update_ha_state()
