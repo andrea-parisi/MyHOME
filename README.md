@@ -1,146 +1,96 @@
-# MyHOME (Modernized Fork)
-**Version: v0.4.11**
+# MyHOME (Modernized) — Andrea Parisi's fork
 
-## 🌟 Changelog
-* **v0.4.11**: **Startup Crash Fix!** Fixed a critical `KeyError: entities` and `KeyError: entity_name` crash during startup on Home Assistant 2024.x when devices were configured via `myhome.yaml`. This was caused by the Voluptuous validation library silently bypassing our schema defaults during dictionary unwrapping. All schemas are now explicitly enforced.
-* **v0.4.10**: **Climate HVAC Action Fix!** Fixed a bug where `hvac_action` would constantly show as `idle` when actuator frames were received for zones that support both heating and cooling. Actuator frames (unlike valve frames) do not explicitly specify if they are heating or cooling, so the integration now correctly infers the action from the current `hvac_mode`.
-* **v0.4.9**: **Diagnostic Frames Interception Fix!** Fixed a bug where diagnostic frames (`*#1001*` for lights and `*#1004*` for climate) were not properly intercepted because the `OWNd` library parses them into a generic `OWNEvent` object, skipping the raw string interception logic. The integration now correctly handles these objects and queries the gateway for the standard status.
-* **v0.4.8**: **Localization Fix!** Fixed an issue where the Home Assistant frontend would fail to render the "Button pressed" string in the dropdown menu with a `MISSING_VALUE` error. Changed the internal context variable from `scenario` to the HA-standard `subtype` to allow the UI to interpolate the string correctly.
-* **v0.4.7**: **Trigger Fix Part 2!** Fixed a critical error where `homeassistant.helpers.trigger` was incorrectly used instead of the `event` trigger integration. This caused "Integration does not support device automation triggers" or "no attribute 'async_attach_trigger'" errors in HA Core 2024+ when attempting to render or attach scenario module triggers.
-* **v0.4.6**: **Diagnostic Tracing!** Changed all internal device trigger logs from `DEBUG` to `WARNING` to force them to appear in the Home Assistant logs. This allows us to trace exactly where the UI is dropping the scenario triggers.
-* **v0.4.5**: **Bulletproof Trigger Fix!** Removed all internal dependencies on `cv.DEVICE_TRIGGER_BASE_SCHEMA` which caused random silent initialization errors depending on the Home Assistant version. Added detailed internal logging to `device_trigger.py` to catch any edge cases in `async_get_triggers`.
-* **v0.4.4**: **Critical Fix!** Fixed a silent `ImportError` (`homeassistant.components.homeassistant.triggers`) introduced by API changes in Home Assistant 2024 which caused Scenario Module device triggers to be silently dropped on initialization. Device triggers have been modernized to use the standard core `trigger_helper`.
-* **v0.4.3**: **Hotfix!** Fixed an issue introduced by strict schema validation in Home Assistant 2024 where Scenario Modules device triggers would not appear ("No triggers for this device") because they lacked the `metadata` parameter and `DEVICE_TRIGGER_BASE_SCHEMA` extension.
-* **v0.4.2**: **Bugfix!** Added interception for diagnostic extended frames (`*#1001` for lights and `*#1004` for climate) which OWNd fails to parse. The integration now catches these frames and immediately queries the gateway for the standard status to ensure Home Assistant stays perfectly in sync.
-* **v0.4.1**: **Critical Hotfix!** Fixed a severe issue introduced in v0.4.0 where intercepting Load Management (WHO 3) messages crashed the integration's listening loop due to invalid notification ID characters. This crash caused the integration to rapidly reconnect to the BTicino gateway, effectively creating a Denial of Service (DoS) condition on the bus that prevented the hardware load management unit from successfully sending disconnect commands to appliances.
-* **v0.4.0**: **Features Galore!** 
-  - **Smooth Transitions**: Native support for fade-in and fade-out transitions on dimmable lights (using software-based stepped dimming).
-  - **Load Management (Gestione Carichi) Discovery**: Added exploratory support for WHO=3. The integration now intercepts load management events and creates persistent notifications in Home Assistant to aid in mapping specific actuators.
-  - **Bugfix**: Fixed an issue where Scenario Modules (stateless devices without entities) were being incorrectly pruned/deleted on every Home Assistant restart.
-* **v0.3.2**: **Hotfix!** Fixed an issue where Scenario Module graphic device triggers were not showing up in the Automation UI on Home Assistant versions 2024.2+ due to a deprecated base schema import.
-* **v0.3.1**: **Hotfix!** Fixed a critical bug introduced in v0.2.2 where the gateway's MAC address capitalization could cause a `KeyError` during the reception of Instant Power broadcast events, triggering a bootloop/crash of the MyHOME integration.
-* **v0.3.0**: **Graphic Device Triggers!** Scenario modules (WHO 0) now automatically register themselves as physical Devices in Home Assistant the first time you press a button. This allows you to create automations natively using the visual UI dropdown menus ("Button 1 pressed", "Button 2 pressed", etc.) instead of writing YAML or listening to raw events!
-* **v0.2.2**: **Energy Meters Fix!** Instantaneous Power meters (WHO 18) now automatically and silently renew their broadcast stream every 55 minutes. You no longer need to manually create an automation to call the `start_sending_instant_power` service every hour!
-* **v0.2.1**: **Active Scanning Bugfix!** Fixed an issue where the Active Scanning tool would aggressively add non-existent ("ghost") devices to Home Assistant because it interpreted the gateway's syntactic protocol `ACK` as a confirmation of device existence. It now correctly waits for and requires a valid `STATE` frame to confirm a device is actually physically present.
-* **v0.2.0**: **New Feature!** Added native support for Bticino Scenario controls (WHO 0). Pressing physical scenario buttons now natively fires the `myhome_scenario_event` in Home Assistant, allowing you to use your scenario wall-plates as remote controls for ANY entity in Home Assistant (Philips Hue, Sonos, generic automations, etc.) without needing to physically reconfigure them as CEN/CEN+ modules!
-* **v0.1.1**: **Stable Release Update!** Fixed OptionsFlow `500 Internal Server Error` in HA 2024.12+, fixed `Unknown error` during auto-learning, fixed Cover `lock/unlock` icon mapping issue by assigning `_attr_device_class` properly, and fixed a critical initialization `KeyError` crash for ALL auto-learned devices (Covers, Switches, Lights, Climates, MediaPlayers).
-* **v0.1.0**: Official Stable Release! Fixed HACS version tracking.
+Home Assistant integration for BTicino / Legrand MyHome (OpenWebNet)
+wired home automation systems.
 
-## 📖 Introduction
+This fork tracks [mantovanellimatteo/MyHOME](https://github.com/mantovanellimatteo/MyHOME)
+and adds **time-based position control for shutters that lack native
+position feedback**.
 
-### What is it? (Cos'è?)
-This is a custom Home Assistant integration that acts as a local bridge to Bticino / Legrand MyHome wired home automation (domotic) systems.
+## Attribution
 
-### What does it do? (Cosa fa?)
-It communicates directly over the local network with your Bticino IP gateway (such as the F454, F453, F452, MH200, MH200N, MH201, MH202, or MyHomeServer1) using the OpenWebNet protocol. It enables Home Assistant to:
-- **Control** lights, dimmers, switches, motorized covers/shutters, and sound diffusion (WHO 22) zones/media players.
-- **Monitor** temperature sensors, energy/power meters, and binary sensors.
-- **Listen** to bus events (such as physical scenario button keypresses) to trigger complex automation routines.
+This project stands on the work of two previous efforts:
 
-### What is it for? (A cosa serve?)
-If you have a wired Bticino MyHome SCS system, this integration brings all your physical devices into Home Assistant for unified control, dashboard visualization, and automation.
-- **100% Local & Offline**: It operates entirely within your local network (LAN) with zero cloud dependencies. Your smart home remains fully functional even without an internet connection, keeping it private, secure, and extremely fast.
-- **Legacy Hardware Support**: Gives a new lease of life to older Bticino gateways (like the F454) by integrating them with modern smart home tech.
-- **Alternative to Cloud Migration**: For gateways like the MyHomeServer1, using this local integration keeps everything local instead of forcing you to migrate your system to the Netatmo cloud-based "Home + Control" API.
+- **[`anotherjulien/MyHOME`](https://github.com/anotherjulien/MyHOME)** —
+  the original integration. Developed by Julien A. from 2020 to early
+  2024 (last release `0.9.3`), then archived by the author. Also
+  author of the underlying [OWNd](https://pypi.org/project/OWNd/)
+  library that this integration still depends on at runtime.
 
----
+- **[`mantovanellimatteo/MyHOME`](https://github.com/mantovanellimatteo/MyHOME)** —
+  active modernization for Home Assistant 2024+. Adds config-flow UI,
+  active/passive bus discovery, WHO 22 sound diffusion, WHO 0 scenario
+  device triggers, WHO 3 load management, WHO 18 energy metering, and
+  many other improvements. See
+  [mantovanelli's README](https://github.com/mantovanellimatteo/MyHOME/blob/master/README.md)
+  for the complete feature list and detailed changelog.
 
-This is a fork of the original `anotherjulien/MyHOME` integration, updated with modern Home Assistant APIs, robust connection recovery, and auto-discovery capabilities.
+This fork ([`andrea-parisi/MyHOME`](https://github.com/andrea-parisi/MyHOME))
+tracks mantovanelli's `master` and layers additional work on top.
 
----
+## What this fork adds
 
-## Key Features
+### Time-based position control for non-advanced shutters (v0.4.12+)
 
-### 🎵 Sound Diffusion (WHO 22) Support
-Includes active and passive discovery of sound diffusion zones on your SCS bus, automatically registering them as `media_player` entities in Home Assistant. This allows you to turn fonic points, audio sources, and speaker zones ON and OFF directly from your dashboards and automations.
+Cover entities without native position feedback from the bus can now
+expose a `SET_POSITION` action, once you configure the movement times.
+The integration then:
 
-### 🔌 Robust Connection Recovery
-The connection listener and command sessions are now wrapped in resilient supervisors with **exponential backoff reconnection**. If the gateway drops the connection due to network issues or session limits, the integration automatically reconnects without requiring a Home Assistant reboot or manual integration reload.
+- Sends `raise` / `lower` commands and issues a timed `stop` to reach
+  the requested position;
+- Extrapolates `current_cover_position` from elapsed time on each
+  start/stop bus event — so physical button presses on the wall
+  keypad also converge to the correct state in Home Assistant.
 
-### 📁 Optional YAML Configuration
-Unlike the legacy integration, `myhome.yaml` is now **entirely optional**. You can configure all your devices directly through the Home Assistant Options Flow UI or let the discovery engine do it for you. 
-*(If you prefer text configuration, `myhome.yaml` is still fully supported and resolved dynamically using the Home Assistant config path).*
+### Configuration
 
-### 🔍 Active Bus Discovery
-You can scan your entire SCS bus for active actuators directly from the UI.
-1. Go to **Settings** > **Devices & Services** > **MyHOME**.
-2. Click **Configure** and choose **Scan Bus for Devices (Active)**.
-3. The integration will query addresses `11-99` for lights and covers, and `1-99` for climate zones, auto-configuring every responsive device in ~10 seconds.
+In your `myhome.yaml`, add `opening_time` and `closing_time` (in
+seconds) to each cover entity that should support time-based
+positioning:
 
-### 🎙️ Passive Bus Sniffing (Discovery by Keypress)
-If you don't know your addresses, you can sniff them passively:
-1. Under **Configure**, choose **Sniff Bus for Keypresses (Passive)**.
-2. Select a duration (e.g., 60 seconds).
-3. Walk around your house and physically press the buttons on the wall. The integration will capture the packets and register the devices instantly!
-
-### 📥 Configuration Export Services
-Easily move between UI and YAML configurations using built-in services:
-- `myhome.scan_bus`: Scans the bus and exports discovered devices to `myhome_discovered.yaml`.
-- `myhome.export_to_yaml`: Exports all your UI-configured devices to `myhome_exported.yaml` for backup or manual editing.
-
-### 🎛️ Scenario Control Integration (New in v0.2.0)
-You can now use your physical Bticino Scenario Modules (such as the 4-button wall plates) to trigger automations directly in Home Assistant without physically reconfiguring them as CEN/CEN+ modules!
-Whenever you press a scenario button, the integration fires a native `myhome_scenario_event` on the Home Assistant bus.
-
-To trigger an automation, use an **Event** trigger in Home Assistant:
-- **Event type:** `myhome_scenario_event`
-- **Event data:**
-  - `scenario`: the number of the scenario button pressed (e.g., 1, 2, 3...)
-  - `control_panel`: the address of the scenario module (`where`)
-
-This allows you to control anything (e.g. Philips Hue, Sonos, Zigbee devices) directly from your Bticino wall switches!
-
-#### Example Automation (YAML)
 ```yaml
-alias: "Trigger Philips Hue with Bticino Button 1"
-trigger:
-  - platform: event
-    event_type: myhome_scenario_event
-    event_data:
-      scenario: 1
-      control_panel: "51" # Optional: Specify the module address if you have multiple
-action:
-  - service: light.toggle
-    target:
-      entity_id: light.living_room_hue
+cover:
+  living_room_shutter:
+    who: "2"
+    where: "41"
+    name: "Living room shutter"
+    opening_time: 15
+    closing_time: 14
 ```
 
----
+Measure real end-to-end times on your hardware — opening and closing
+values often differ (gravity typically makes closing faster).
+
+Advanced shutters (with native `SET_POSITION` support from the
+gateway) are unaffected and continue to use bus-reported positions
+directly.
 
 ## Installation
 
-### Via HACS (Home Assistant Community Store)
-1. Go to HACS > **Integrations**.
-2. Click the three dots in the top-right corner and select **Custom repositories**.
-3. Add the URL of this repository: `https://github.com/mantovanellimatteo/MyHOME` as an **Integration**.
-4. Click **Download**.
-5. Restart Home Assistant.
+Via HACS, as a custom repository:
 
----
+1. HACS → three-dot menu → **Custom repositories**
+2. URL: `https://github.com/andrea-parisi/MyHOME`, category: **Integration**
+3. Download the latest release
+4. Restart Home Assistant
 
-## Configuration
+## Requirements
 
-1. In Home Assistant, go to **Settings** > **Devices & Services**.
-2. Click **Add Integration** and search for **MyHOME**.
-3. Fill in your gateway's IP address, port (`20000`), and your OpenWebNet password.
-4. Once added, click **Configure** on the MyHOME card to access gateway settings, run an Active Scan, or start Passive Sniffing.
+- Home Assistant **2024.3.0** or newer
+- A BTicino / Legrand MyHome gateway (F452, F454, F455, F453AV,
+  MH200N, MH200, MH201, MH202, MyHomeServer1, HL4684, AM4890)
+- Wired MyHome bus devices (covers, lights, climate, sound diffusion,
+  scenarios, energy meters, load management…)
 
-### YAML Configuration (Optional)
-If you wish to configure devices manually using YAML, create a file named `myhome.yaml` in your Home Assistant configuration directory (e.g., `/config/` or `/homeassistant/` depending on your setup):
+## Support
 
-```yaml
-myhome_gateway:
-  mac: "00:03:50:XX:XX:XX" # Replace with your gateway's MAC address
-  light:
-    kitchen_light:
-      who: "1"
-      where: "12"
-      name: "Kitchen Light"
-      dimmable: false
-  cover:
-    living_room_shutter:
-      who: "2"
-      where: "34"
-      name: "Living Room Shutter"
-```
-For more advanced parameters, please refer to the [original wiki documentation](https://github.com/anotherjulien/MyHOME/wiki).
+Please open issues on this fork:
+[github.com/andrea-parisi/MyHOME/issues](https://github.com/andrea-parisi/MyHOME/issues)
+
+For questions or issues related to features inherited from
+mantovanelli's fork (everything except the time-based shutter
+extension), the upstream README is usually the best reference.
+
+## License
+
+Same as upstream — see the `LICENSE` file at the repository root.
