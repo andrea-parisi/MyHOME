@@ -27,9 +27,14 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_DEVICE_MODEL,
     CONF_ADVANCED_SHUTTER,
+    CONF_SHUTTER_OPENING_TIME,
+    CONF_SHUTTER_CLOSING_TIME,
     DOMAIN,
     LOGGER,
 )
+from datetime import datetime
+import asyncio
+
 from .myhome_device import MyHOMEEntity
 from .gateway import MyHOMEGatewayHandler
 
@@ -53,6 +58,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             advanced=_configured_covers[_cover].get(CONF_ADVANCED_SHUTTER, False),
             manufacturer=_configured_covers[_cover].get(CONF_MANUFACTURER, "BTicino S.p.A."),
             model=_configured_covers[_cover].get(CONF_DEVICE_MODEL, None),
+            opening_time=_configured_covers[_cover].get(CONF_SHUTTER_OPENING_TIME, 0),
+            closing_time=_configured_covers[_cover].get(CONF_SHUTTER_CLOSING_TIME, 0),
             gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
         )
         _covers.append(_cover)
@@ -107,6 +114,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._attr_supported_features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
         if advanced:
             self._attr_supported_features |= CoverEntityFeature.SET_POSITION
+        elif opening_time > 0 and closing_time > 0:
+            self._attr_supported_features |= CoverEntityFeature.SET_POSITION
         self._gateway_handler = gateway
 
         self._attr_extra_state_attributes = {
@@ -117,6 +126,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_extra_state_attributes["Int"] = self._interface
 
         self._attr_current_cover_position = None
+        self._attr_opening_time = opening_time
+        self._attr_closing_time = closing_time
+        self._attr_advanced = advanced
+        self._attr_last_event = datetime.now()
         self._attr_is_opening = None
         self._attr_is_closing = None
         self._attr_is_closed = None
@@ -138,9 +151,37 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_set_cover_position(self, **kwargs):
         """Move the cover to a specific position."""
-        if ATTR_POSITION in kwargs:
-            position = kwargs[ATTR_POSITION]
+        if ATTR_POSITION not in kwargs:
+            return
+        position = kwargs[ATTR_POSITION]
+
+        if self._attr_advanced:
             await self._gateway_handler.send(OWNAutomationCommand.set_shutter_level(self._full_where, position))
+            return
+
+        if self._attr_opening_time <= 0 or self._attr_closing_time <= 0:
+            return
+
+        # Time-based positioning: if already moving, stop first
+        if self._attr_is_opening or self._attr_is_closing:
+            await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
+
+        if self._attr_current_cover_position is None:
+            return
+
+        required_move = int(position - self._attr_current_cover_position)
+        if required_move > 0:
+            required_time = abs(self._attr_opening_time * required_move / 100)
+            LOGGER.debug("Open -> Required time %s", required_time)
+            await self._gateway_handler.send(OWNAutomationCommand.raise_shutter(self._full_where))
+            await asyncio.sleep(required_time)
+            await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
+        elif required_move < 0:
+            required_time = abs(self._attr_closing_time * required_move / 100)
+            LOGGER.debug("Close -> Required time %s", required_time)
+            await self._gateway_handler.send(OWNAutomationCommand.lower_shutter(self._full_where))
+            await asyncio.sleep(required_time)
+            await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
 
     async def async_stop_cover(self, **kwargs):  # pylint: disable=unused-argument
         """Stop the cover."""
@@ -153,11 +194,47 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
-        self._attr_is_opening = message.is_opening
-        self._attr_is_closing = message.is_closing
-        if message.is_closed is not None:
-            self._attr_is_closed = message.is_closed
+
+        # If the bus provides a position (advanced shutter), use it; otherwise
+        # extrapolate from the time elapsed since the last start/stop event.
         if message.current_position is not None:
             self._attr_current_cover_position = message.current_position
+        elif (
+            self._attr_last_event is not None
+            and self._attr_opening_time > 0
+            and self._attr_closing_time > 0
+        ):
+            elapsed_seconds = (datetime.now() - self._attr_last_event).total_seconds()
+            if elapsed_seconds > 0:
+                if self._attr_is_opening:
+                    if self._attr_opening_time < elapsed_seconds:
+                        self._attr_current_cover_position = 100
+                    elif self._attr_current_cover_position is not None:
+                        self._attr_current_cover_position = round(
+                            min(100, self._attr_current_cover_position + (100 * elapsed_seconds / self._attr_opening_time)),
+                            0,
+                        )
+                elif self._attr_is_closing:
+                    if self._attr_closing_time < elapsed_seconds:
+                        self._attr_current_cover_position = 0
+                    elif self._attr_current_cover_position is not None:
+                        self._attr_current_cover_position = round(
+                            max(0, self._attr_current_cover_position - (100 * elapsed_seconds / self._attr_closing_time)),
+                            0,
+                        )
+            LOGGER.debug(
+                "%s current_cover_position=%s",
+                self._gateway_handler.log_id,
+                self._attr_current_cover_position,
+            )
+
+        self._attr_last_event = datetime.now()
+        self._attr_is_opening = message.is_opening
+        self._attr_is_closing = message.is_closing
+
+        if message.is_closed is not None:
+            self._attr_is_closed = message.is_closed
+        elif self._attr_current_cover_position is not None:
+            self._attr_is_closed = self._attr_current_cover_position == 0
 
         self.async_schedule_update_ha_state()
