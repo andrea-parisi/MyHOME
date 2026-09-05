@@ -1,9 +1,4 @@
 """Support for MyHome covers."""
-
-# Interval between periodic position updates while a time-based cover
-# is moving. 500 ms gives ~2-3% resolution on 15-25 s shutters, at
-# negligible CPU cost.
-POSITION_UPDATE_INTERVAL = timedelta(milliseconds=500)
 from homeassistant.components.cover import (
     ATTR_POSITION,
     DOMAIN as PLATFORM,
@@ -45,6 +40,12 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .myhome_device import MyHOMEEntity
 from .gateway import MyHOMEGatewayHandler
+
+
+# Interval between periodic position updates while a time-based cover
+# is moving. 500 ms gives ~2-3% resolution on 15-25 s shutters, at
+# negligible CPU cost.
+POSITION_UPDATE_INTERVAL = timedelta(milliseconds=500)
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
