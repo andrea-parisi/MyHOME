@@ -142,6 +142,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._attr_advanced = advanced
         self._attr_last_event = datetime.now()
         self._position_update_unsub: CALLBACK_TYPE | None = None
+        # Absolute reference for the movement currently in progress. Set when a
+        # movement starts, cleared when it stops. The periodic tracker never
+        # touches these, so elapsed time is measured from the true start.
+        self._movement_start_time: datetime | None = None
+        self._movement_start_position = None
         self._attr_is_opening = None
         self._attr_is_closing = None
         self._attr_is_closed = None
@@ -200,38 +205,45 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
 
     def _extrapolate_position(self) -> None:
-        """Update ``_attr_current_cover_position`` using elapsed time.
+        """Update ``_attr_current_cover_position`` from the movement start.
 
-        Callable both from ``handle_event`` (on bus start/stop) and from
-        the periodic timer (during movement). Uses the additive formula
-        so ``_attr_last_event`` MUST be refreshed by the caller after
-        this method returns.
+        Position is computed with an ABSOLUTE formula:
+
+            position = start_position ± 100 * elapsed / travel_time
+
+        where ``elapsed`` is measured from ``_movement_start_time`` (a fixed
+        anchor set when the movement began), NOT incrementally from the last
+        tick. This is the key difference from the broken v0.4.15 additive
+        approach: because the anchor never moves, the end-of-travel snap
+        (``elapsed >= travel_time``) fires reliably, and a shutter whose start
+        position was unknown (post-restart) still recovers to a known end
+        position after a full travel.
         """
         if (
-            self._attr_last_event is None
+            self._movement_start_time is None
             or self._attr_opening_time <= 0
             or self._attr_closing_time <= 0
         ):
             return
 
-        elapsed_seconds = (datetime.now() - self._attr_last_event).total_seconds()
+        elapsed_seconds = (datetime.now() - self._movement_start_time).total_seconds()
         if elapsed_seconds <= 0:
             return
 
         if self._attr_is_opening:
-            if self._attr_opening_time < elapsed_seconds:
+            if elapsed_seconds >= self._attr_opening_time:
                 self._attr_current_cover_position = 100
-            elif self._attr_current_cover_position is not None:
+            elif self._movement_start_position is not None:
                 self._attr_current_cover_position = round(
-                    min(100, self._attr_current_cover_position + (100 * elapsed_seconds / self._attr_opening_time)),
+                    min(100, self._movement_start_position + (100 * elapsed_seconds / self._attr_opening_time)),
                     0,
                 )
         elif self._attr_is_closing:
-            if self._attr_closing_time < elapsed_seconds:
+            if elapsed_seconds >= self._attr_closing_time:
                 self._attr_current_cover_position = 0
-            elif self._attr_current_cover_position is not None:
+            elif self._movement_start_position is not None:
                 self._attr_current_cover_position = round(
-                    max(0, self._attr_current_cover_position - (100 * elapsed_seconds / self._attr_closing_time)),
+                    max(0, self._movement_start_position - (100 * elapsed_seconds / self._attr_closing_time)),
                     0,
                 )
 
@@ -266,48 +278,89 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     @callback
     def _periodic_position_update(self, now: datetime) -> None:
-        """Timer tick: extrapolate a new position from elapsed time."""
+        """Timer tick: extrapolate a new position from the movement start.
+
+        Deliberately does NOT touch ``_attr_last_event`` or the movement
+        reference (``_movement_start_time`` / ``_movement_start_position``):
+        those belong to bus events. A tick only reads elapsed time, so the
+        absolute formula stays anchored for the whole travel.
+        """
         self._extrapolate_position()
-        self._attr_last_event = datetime.now()
         self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
         """Cancel the position tracker on entity removal."""
         self._stop_position_tracker()
 
+    def _apply_movement(
+        self,
+        *,
+        is_opening,
+        is_closing,
+        is_closed,
+        current_position,
+    ) -> None:
+        """Apply a movement state change to this cover.
+
+        Shared entry point for movement, whatever its source:
+
+        * ``handle_event`` — a point-to-point automation event addressed to
+          this cover's own WHERE;
+        * (future, point 3) a group command ``*2*WHAT*#N##`` where this cover
+          is a member of group N and therefore moves without a direct event
+          of its own.
+
+        It finalises the position for any movement that just ended, anchors a
+        fresh absolute reference for a movement that is starting, updates the
+        opening/closing/closed flags, and starts/stops the periodic tracker.
+        """
+        was_moving = self._attr_is_opening or self._attr_is_closing
+
+        # If the bus reports an absolute position (advanced shutter), trust it.
+        # Otherwise, if a movement was in progress, finalise the position
+        # reached so far before we change the movement flags.
+        if current_position is not None:
+            self._attr_current_cover_position = current_position
+        elif was_moving:
+            self._extrapolate_position()
+
+        self._attr_last_event = datetime.now()
+        self._attr_is_opening = is_opening
+        self._attr_is_closing = is_closing
+
+        if is_closed is not None:
+            self._attr_is_closed = is_closed
+        elif self._attr_current_cover_position is not None:
+            self._attr_is_closed = self._attr_current_cover_position == 0
+
+        if self._attr_is_opening or self._attr_is_closing:
+            # (Re)anchor the absolute movement reference at "now" / current
+            # position and make sure the periodic tracker is running.
+            self._movement_start_time = datetime.now()
+            self._movement_start_position = self._attr_current_cover_position
+            self._start_position_tracker()
+        else:
+            self._movement_start_time = None
+            self._movement_start_position = None
+            self._stop_position_tracker()
+
+        self.async_schedule_update_ha_state()
+
     def handle_event(self, message: OWNAutomationEvent):
-        """Handle an event message."""
+        """Handle a point-to-point automation event addressed to this cover."""
         LOGGER.info(
             "%s %s",
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
-
-        # If the bus provides a position (advanced shutter), trust it. Otherwise
-        # extrapolate from the time elapsed since the last start/stop event.
-        if message.current_position is not None:
-            self._attr_current_cover_position = message.current_position
-        else:
-            self._extrapolate_position()
-            LOGGER.debug(
-                "%s current_cover_position=%s",
-                self._gateway_handler.log_id,
-                self._attr_current_cover_position,
-            )
-
-        self._attr_last_event = datetime.now()
-        self._attr_is_opening = message.is_opening
-        self._attr_is_closing = message.is_closing
-
-        if message.is_closed is not None:
-            self._attr_is_closed = message.is_closed
-        elif self._attr_current_cover_position is not None:
-            self._attr_is_closed = self._attr_current_cover_position == 0
-
-        # Start or stop the periodic tracker based on the new movement state
-        if self._attr_is_opening or self._attr_is_closing:
-            self._start_position_tracker()
-        else:
-            self._stop_position_tracker()
-
-        self.async_schedule_update_ha_state()
+        self._apply_movement(
+            is_opening=message.is_opening,
+            is_closing=message.is_closing,
+            is_closed=message.is_closed,
+            current_position=message.current_position,
+        )
+        LOGGER.debug(
+            "%s current_cover_position=%s",
+            self._gateway_handler.log_id,
+            self._attr_current_cover_position,
+        )
